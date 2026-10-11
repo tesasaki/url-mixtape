@@ -237,13 +237,21 @@ async function accessToken() {
   if (Date.now() > t.exp) t = await tokenRequest({ grant_type: "refresh_token", refresh_token: t.refresh });
   return t.access;
 }
-let pauseUntil = 0;
+let pauseUntil = 0, rateBlocked = false;
+const BACKOFF = [5, 10, 20, 40, 60];
+function rateError() {
+  const e = new Error("Spotifyが一時的にアクセスを制限しています。30分〜1時間ほど空けてから、もう一度「読み込む」を押してください(読み込み済みのアルバムは覚えているので続きから速く進みます)。");
+  e.rate = true; return e;
+}
 async function sp(path, opts = {}, tries = 0) {
+  if (rateBlocked) throw rateError();
   if (Date.now() < pauseUntil) await sleep(pauseUntil - Date.now());
   const url = path.startsWith("https://") ? path : "https://api.spotify.com/v1/" + path;
   const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + (await accessToken()), "Content-Type": "application/json", ...(opts.headers || {}) } });
-  if (r.status === 429 && tries < 12) {
-    const w = Math.max(+(r.headers.get("Retry-After") || 0), 3 * (tries + 1));
+  if (r.status === 429) {
+    const ra = +(r.headers.get("Retry-After") || 0);
+    if (tries >= BACKOFF.length || ra > 120) { rateBlocked = true; throw rateError(); }
+    const w = Math.max(ra, BACKOFF[tries]);
     pauseUntil = Math.max(pauseUntil, Date.now() + (w + 1) * 1000);
     $("runStatus").textContent = `Spotifyの利用制限にかかったため、${w}秒待ってから続けます…`;
     await sleep(Math.max(0, pauseUntil - Date.now())); return sp(path, opts, tries + 1);
@@ -379,7 +387,7 @@ async function searchBest(type, artist, title) {
       let s = a + t + (it.album_type === "album" ? 0.05 : 0) + Math.min(it.total_tracks || 0, 30) / 1000;
       if (s > bestScore) { best = it; bestScore = s; }
     }
-    if (best && bestScore >= 1.9) break;
+    if (best && bestScore >= 1.6) break;
   }
   return best;
 }
@@ -418,6 +426,7 @@ async function resolve(entry) {
     if (!hit) return { miss: true, label: entry.label + "(Spotifyで見つかりません)" };
     return entry.kind === "album" ? await getAlbum(hit.id) : await getTrack(hit.id);
   } catch (e) {
+    if (e.rate) throw e;
     return { miss: true, label: (entry.label || (entry.ytid ? "YouTube " + entry.ytid : entry.kind + " " + entry.id)) + `(${e.message})` };
   }
 }
@@ -441,6 +450,7 @@ function renderItems() {
 
 async function onLoad() {
   busy(true); logEl.textContent = ""; $("result").hidden = true;
+  rateBlocked = false; pauseUntil = 0;
   try {
     await accessToken();
     let entries;
@@ -471,6 +481,7 @@ async function onLoad() {
     setProgress(1, 1, "読み込み完了。03で入れ方を選んで作成してください。");
     saveForm();
   } catch (e) {
+    saveAlbumCache();
     setProgress(0, 1, ""); $("runStatus").innerHTML = ""; const s = document.createElement("span"); s.className = "err"; s.textContent = e.message; $("runStatus").appendChild(s);
     $("s-run").scrollIntoView({ behavior: "smooth", block: "start" });
   } finally { busy(false); }
