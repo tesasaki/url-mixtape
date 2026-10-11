@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>URL Mixtape</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: 1カラムの手順カード。上から順に「ログイン → 読み込み → 設定 → 作成」 */
+:root{
+  --bg:#f3f1f6; --surface:#ffffff; --fg:#1c1a24; --muted:#6a6577; --line:#dcd8e3;
+  --accent:#d6336c; --accent-fg:#ffffff; --ok:#1f8a5b; --warn:#b5541b; --err:#c0263a;
+  --display:"Dela Gothic One","Zen Kaku Gothic New",system-ui,sans-serif;
+  --body:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#15131b; --surface:#1f1c27; --fg:#ece9f2; --muted:#a29cb0; --line:#353042;
+  --accent:#ff5c8e; --accent-fg:#1a0710; --ok:#4cc68f; --warn:#f0a060; --err:#ff6b7f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#15131b; --surface:#1f1c27; --fg:#ece9f2; --muted:#a29cb0; --line:#353042;
+  --accent:#ff5c8e; --accent-fg:#1a0710; --ok:#4cc68f; --warn:#f0a060; --err:#ff6b7f; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 var(--body)}
+main{max-width:640px;margin:0 auto;padding-inline:16px;padding-block:28px 64px;display:grid;gap:16px}
+header h1{font:400 32px/1.15 var(--display);margin:0;letter-spacing:.01em}
+header p{margin:6px 0 0;color:var(--muted)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:12px;min-width:0}
+section h2{margin:0;font-size:16px;font-weight:700;display:flex;gap:10px;align-items:baseline}
+section h2 .n{font:500 12px var(--mono);color:var(--accent);letter-spacing:.08em}
+label{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+textarea{min-height:120px;resize:vertical;font-size:14px}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+button{font:inherit;font-weight:700;border:0;border-radius:999px;padding:12px 18px;cursor:pointer;background:var(--accent);color:var(--accent-fg)}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.tabs{display:flex;gap:6px}
+.tabs button{flex:1;padding:8px 12px;font-weight:500;background:transparent;color:var(--muted);border:1px solid var(--line)}
+.tabs button[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.status{font-size:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pill{font:500 12px var(--mono);padding:3px 10px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.off{color:var(--muted)} .pill.err{color:var(--err)}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.warn{color:var(--warn)} .err{color:var(--err)}
+.bar{height:6px;background:var(--line);border-radius:999px;overflow:hidden}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+#log{font:12px/1.6 var(--mono);color:var(--muted);max-height:180px;overflow:auto;white-space:pre-wrap;margin:0}
+ol#items{margin:0;padding-left:2.4em;max-height:260px;overflow:auto;font-size:13px}
+ol#items li{padding:2px 0} ol#items li.miss{color:var(--err)}
+.count{font:500 13px var(--mono);font-variant-numeric:tabular-nums}
+.result a{color:var(--accent);font-weight:700;word-break:break-all}
+code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px;border-radius:5px;word-break:break-all}
+@media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main>
+<header>
+  <h1>URL Mixtape</h1>
+  <p>ページに載っているアルバムや曲を、Spotifyのプレイリストにまとめます。</p>
+</header>
+
+<p id="setup" class="err" hidden>config.js に Spotify の Client ID が設定されていません。</p>
+
+<section id="s-login">
+  <h2><span class="n">01</span>Spotifyにログイン</h2>
+  <div class="status"><span id="loginPill" class="pill off">未ログイン</span><span id="loginName"></span></div>
+  <div class="row">
+    <button id="loginBtn">Spotifyでログイン</button>
+    <button id="logoutBtn" class="ghost" hidden>ログアウト</button>
+  </div>
+</section>
+
+<section id="s-src">
+  <h2><span class="n">02</span>リストを読み込む</h2>
+  <div class="tabs" role="tablist">
+    <button id="tabUrl" role="tab" aria-selected="true">URLから</button>
+    <button id="tabText" role="tab" aria-selected="false">テキストから</button>
+  </div>
+  <div id="paneUrl" class="grid" style="display:grid;gap:10px">
+    <label for="url">ページのURL
+      <input id="url" type="url" inputmode="url" placeholder="https://..." autocomplete="off">
+    </label>
+    <p class="hint">ページ内のSpotifyリンク(アルバム・曲)を上から順に拾います。リンクがないページは「テキストから」を使ってください。</p>
+  </div>
+  <div id="paneText" hidden style="gap:10px">
+    <label for="lines">1行に1件(「アーティスト - タイトル」またはSpotifyのURL)
+      <textarea id="lines" placeholder="The Hotelier - Home, Like Noplace Is There&#10;Taking Back Sunday - Tell All Your Friends"></textarea>
+    </label>
+    <label for="lineKind">各行は
+      <select id="lineKind"><option value="album">アルバム</option><option value="track">曲</option></select>
+    </label>
+  </div>
+  <button id="loadBtn">読み込む</button>
+  <div id="loadOut" hidden style="display:grid;gap:8px">
+    <div class="count" id="loadCount"></div>
+    <ol id="items"></ol>
+  </div>
+</section>
+
+<section id="s-opt">
+  <h2><span class="n">03</span>入れ方を決める</h2>
+  <label for="mode">モード
+    <select id="mode">
+      <option value="all">全曲</option>
+      <option value="albumTop">アルバムごとに人気上位N曲</option>
+      <option value="artistTop">アーティストごとに人気上位N曲</option>
+    </select>
+  </label>
+  <div class="row">
+    <label for="topN">N(人気上位の曲数)<input id="topN" type="number" min="1" max="50" value="3"></label>
+    <label for="useItems">リストの上から何件使うか<input id="useItems" type="number" min="1" placeholder="すべて"></label>
+    <label for="maxTracks">合計の曲数の上限<input id="maxTracks" type="number" min="1" max="10000" placeholder="上限なし"></label>
+  </div>
+  <p class="hint" id="modeHint">人気順はLast.fmの再生回数で判定します。「アーティストごと」はそのアーティストの全作品から選びます。</p>
+  <label for="plName">プレイリスト名<input id="plName" type="text" placeholder="URL Mixtape"></label>
+  <label for="plPublic">公開設定
+    <select id="plPublic"><option value="false">非公開</option><option value="true">公開</option></select>
+  </label>
+</section>
+
+<section id="s-run">
+  <h2><span class="n">04</span>作成</h2>
+  <button id="runBtn">プレイリストを作成</button>
+  <div class="bar"><i id="barFill"></i></div>
+  <div class="status" id="runStatus"></div>
+  <div class="result" id="result" hidden></div>
+  <pre id="log"></pre>
+</section>
+</main>
+
+<script>
+(() => {
+"use strict";
+const CFG = window.MIXTAPE_CONFIG || {};
+const CLIENT_ID = (CFG.spotifyClientId || "").trim();
+const LASTFM_KEY = (CFG.lastfmApiKey || "").trim();
+const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, "");
+const SCOPES = "playlist-modify-private playlist-modify-public";
+const $ = (id) => document.getElementById(id);
+
+// ---------- storage ----------
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem("mx_" + k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem("mx_" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("mx_" + k); } catch {} },
+};
+
+// ---------- UI helpers ----------
+const logEl = $("log");
+function log(msg) { logEl.textContent += msg + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+function setProgress(done, total, label) {
+  $("barFill").style.width = total ? Math.round((done / total) * 100) + "%" : "0";
+  $("runStatus").textContent = label || "";
+}
+function busy(on) { ["loadBtn", "runBtn", "loginBtn"].forEach((id) => ($(id).disabled = on)); }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pool(list, limit, fn) {
+  const out = new Array(list.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => {
+    while (i < list.length) { const k = i++; out[k] = await fn(list[k], k); }
+  }));
+  return out;
+}
+
+// ---------- text matching ----------
+const NOISE = /\((?:[^)]*(?:remaster|deluxe|edition|anniversary|expanded|version|reissue)[^)]*)\)|\[(?:[^\]]*(?:remaster|deluxe|edition|anniversary|expanded|version|reissue)[^\]]*)\]|-\s*(?:\d{4}\s*)?remaster(?:ed)?.*$/i;
+function norm(s) {
+  return (s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(NOISE, "").replace(/&/g, "and").replace(/^the\s+/, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+function ratio(a, b) {
+  // bigram Dice
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+  const m = new Map();
+  for (let i = 0; i < a.length - 1; i++) { const g = a.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); }
+  let hit = 0;
+  for (let i = 0; i < b.length - 1; i++) { const g = b.slice(i, i + 2); const c = m.get(g); if (c) { hit++; m.set(g, c - 1); } }
+  return (2 * hit) / (a.length + b.length - 2);
+}
+function sim(a, b) {
+  a = norm(a); b = norm(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.9;
+  return ratio(a, b);
+}
+const cleanTrack = (s) => (s || "").replace(NOISE, "").replace(/\s+-\s+(live|demo|acoustic|single).*$/i, "").trim();
+
+// ---------- Spotify auth (PKCE) ----------
+function b64url(bytes) { return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+async function login() {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+  store.set("verifier", verifier);
+  saveForm();
+  const p = new URLSearchParams({
+    client_id: CLIENT_ID, response_type: "code", redirect_uri: REDIRECT_URI, scope: SCOPES,
+    code_challenge_method: "S256", code_challenge: b64url(digest),
+  });
+  location.href = "https://accounts.spotify.com/authorize?" + p;
+}
+async function tokenRequest(body) {
+  const r = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: CLIENT_ID, ...body }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error_description || j.error || "token error");
+  const tok = { access: j.access_token, refresh: j.refresh_token || store.get("tok")?.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 };
+  store.set("tok", tok);
+  return tok;
+}
+async function handleRedirect() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("code") && !q.has("error")) return;
+  history.replaceState(null, "", REDIRECT_URI);
+  if (q.has("error")) { alertLogin("ログインがキャンセルされました"); return; }
+  try {
+    await tokenRequest({ grant_type: "authorization_code", code: q.get("code"), redirect_uri: REDIRECT_URI, code_verifier: store.get("verifier") });
+  } catch (e) { alertLogin("ログインに失敗しました: " + e.message); }
+  store.del("verifier");
+}
+async function accessToken() {
+  let t = store.get("tok");
+  if (!t) throw new Error("Spotifyにログインしてください");
+  if (Date.now() > t.exp) t = await tokenRequest({ grant_type: "refresh_token", refresh_token: t.refresh });
+  return t.access;
+}
+async function sp(path, opts = {}, tries = 0) {
+  const url = path.startsWith("https://") ? path : "https://api.spotify.com/v1/" + path;
+  const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + (await accessToken()), "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 429 && tries < 6) { const w = +(r.headers.get("Retry-After") || 2); await sleep((w + 1) * 1000); return sp(path, opts, tries + 1); }
+  if (r.status === 401 && tries < 1) { const t = store.get("tok"); if (t) { t.exp = 0; store.set("tok", t); } return sp(path, opts, tries + 1); }
+  if (!r.ok) {
+    let msg = ""; try { msg = (await r.json()).error?.message || ""; } catch {}
+    const e = new Error(`Spotify ${r.status}${msg ? ": " + msg : ""}`); e.status = r.status; throw e;
+  }
+  return r.status === 204 ? null : r.json();
+}
+function alertLogin(msg) { $("loginPill").className = "pill err"; $("loginPill").textContent = "エラー"; $("loginName").textContent = msg; }
+async function refreshLoginUI() {
+  if (!CLIENT_ID) { $("setup").hidden = false; $("loginBtn").disabled = true; return; }
+  if (!store.get("tok")) return;
+  try {
+    const me = await sp("me");
+    $("loginPill").className = "pill ok"; $("loginPill").textContent = "ログイン中";
+    $("loginName").textContent = me.display_name || me.id;
+    $("loginBtn").hidden = true; $("logoutBtn").hidden = false;
+  } catch (e) {
+    alertLogin(e.status === 403
+      ? "このアカウントは利用登録されていません。アプリの管理者に、あなたのSpotifyのメールアドレスを登録してもらってください。"
+      : "ログイン状態を確認できませんでした: " + e.message);
+    store.del("tok"); $("loginBtn").hidden = false;
+  }
+}
+
+// ---------- Last.fm ----------
+const pcCache = new Map();
+async function lfm(params) {
+  const p = new URLSearchParams({ ...params, api_key: LASTFM_KEY, format: "json", autocorrect: "1" });
+  for (let i = 0; i < 4; i++) {
+    const r = await fetch("https://ws.audioscrobbler.com/2.0/?" + p);
+    if (r.ok) { const j = await r.json(); if (j.error === 29) { await sleep(1500); continue; } return j; }
+    await sleep(1000);
+  }
+  return {};
+}
+async function playcount(artist, track) {
+  const k = artist + "\u0000" + track;
+  if (pcCache.has(k)) return pcCache.get(k);
+  const j = await lfm({ method: "track.getInfo", artist, track: cleanTrack(track) });
+  const n = +(j.track?.playcount || 0);
+  pcCache.set(k, n);
+  return n;
+}
+
+// ---------- reading the page ----------
+const LINK_RE = /(?:open\.spotify\.com\/(?:embed\/)?(?:intl-[a-z]{2}(?:-[a-z]{2})?\/)?|spotify:)(album|track)[\/:]([A-Za-z0-9]{22})/g;
+function extractLinks(text) {
+  const seen = new Set(), out = [];
+  for (const m of text.matchAll(LINK_RE)) {
+    const key = m[1] + ":" + m[2];
+    if (!seen.has(key)) { seen.add(key); out.push({ kind: m[1], id: m[2] }); }
+  }
+  return out;
+}
+async function fetchPageText(url) {
+  const tries = [
+    () => fetch("https://r.jina.ai/" + url, { headers: { "X-Return-Format": "html" } }),
+    () => fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url)),
+  ];
+  let lastErr;
+  for (const t of tries) {
+    try { const r = await t(); if (r.ok) { const s = await r.text(); if (s.length > 200) return s; } lastErr = new Error("HTTP " + r.status); }
+    catch (e) { lastErr = e; }
+  }
+  throw new Error("ページを取得できませんでした(" + (lastErr?.message || "不明") + ")。「テキストから」をお試しください。");
+}
+
+// ---------- resolving items ----------
+async function getAlbum(id) {
+  const a = await sp("albums/" + id);
+  const tracks = [...a.tracks.items];
+  let next = a.tracks.next;
+  while (next) { const pg = await sp(next); tracks.push(...pg.items); next = pg.next; }
+  return {
+    kind: "album", id, name: a.name, artist: a.artists[0]?.name || "",
+    tracks: tracks.filter((t) => t && t.uri).map((t) => ({ uri: t.uri, name: t.name, artist: t.artists[0]?.name || a.artists[0]?.name || "" })),
+  };
+}
+async function getTrack(id) {
+  const t = await sp("tracks/" + id);
+  return { kind: "track", id, name: t.name, artist: t.artists[0]?.name || "", tracks: [{ uri: t.uri, name: t.name, artist: t.artists[0]?.name || "" }] };
+}
+async function searchBest(type, artist, title) {
+  const qs = [`${type}:"${title}" artist:"${artist}"`, `${artist} ${title}`];
+  let best = null, bestScore = 0;
+  for (const q of qs) {
+    const j = await sp(`search?type=${type}&limit=10&q=` + encodeURIComponent(q));
+    for (const it of j[type + "s"]?.items || []) {
+      if (!it) continue;
+      const a = Math.max(...it.artists.map((x) => sim(artist, x.name)));
+      const t = sim(title, it.name);
+      if (a < 0.7 || t < 0.6) continue;
+      let s = a + t + (it.album_type === "album" ? 0.05 : 0) + Math.min(it.total_tracks || 0, 30) / 1000;
+      if (s > bestScore) { best = it; bestScore = s; }
+    }
+    if (best && bestScore >= 1.9) break;
+  }
+  return best;
+}
+function parseLines(text, kind) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim().replace(/^\d+[.)]\s*/, "");
+    if (!line) continue;
+    const links = extractLinks(line);
+    if (links.length) { out.push(links[0]); continue; }
+    const m = line.split(/\s+[-–—]\s+/);
+    if (m.length >= 2) out.push({ kind, artist: m[0].trim(), title: m.slice(1).join(" - ").trim(), label: line });
+    else out.push({ kind, miss: true, label: line });
+  }
+  return out;
+}
+async function resolve(entry) {
+  try {
+    if (entry.miss) return { miss: true, label: entry.label + "(形式を認識できません)" };
+    if (entry.id) return entry.kind === "album" ? await getAlbum(entry.id) : await getTrack(entry.id);
+    const hit = await searchBest(entry.kind, entry.artist, entry.title);
+    if (!hit) return { miss: true, label: entry.label + "(Spotifyで見つかりません)" };
+    return entry.kind === "album" ? await getAlbum(hit.id) : await getTrack(hit.id);
+  } catch (e) {
+    return { miss: true, label: (entry.label || entry.kind + " " + entry.id) + `(${e.message})` };
+  }
+}
+
+// ---------- state ----------
+let items = [];
+function renderItems() {
+  const ol = $("items"); ol.textContent = "";
+  for (const it of items) {
+    const li = document.createElement("li");
+    if (it.miss) { li.className = "miss"; li.textContent = it.label; }
+    else li.textContent = `${it.artist} - ${it.name}` + (it.kind === "album" ? `(${it.tracks.length}曲)` : "(曲)");
+    ol.appendChild(li);
+  }
+  const ok = items.filter((x) => !x.miss);
+  const total = ok.reduce((n, x) => n + x.tracks.length, 0);
+  const miss = items.length - ok.length;
+  $("loadCount").textContent = `${ok.length}件(全${total}曲)` + (miss ? ` / 見つからず ${miss}件` : "");
+  $("loadOut").hidden = false; $("loadOut").style.display = "grid";
+}
+
+async function onLoad() {
+  busy(true); logEl.textContent = ""; $("result").hidden = true;
+  try {
+    await accessToken();
+    let entries;
+    if (!$("paneUrl").hidden) {
+      const url = $("url").value.trim();
+      if (!/^https?:\/\//.test(url)) throw new Error("URLを入力してください");
+      setProgress(0, 1, "ページを読み込み中…");
+      entries = extractLinks(await fetchPageText(url));
+      if (!entries.length) throw new Error("このページにはSpotifyのアルバム・曲リンクが見つかりませんでした。「テキストから」に「アーティスト - タイトル」の一覧を貼ってください。");
+      log(`Spotifyリンクを${entries.length}件見つけました`);
+    } else {
+      entries = parseLines($("lines").value, $("lineKind").value);
+      if (!entries.length) throw new Error("テキストを入力してください");
+    }
+    let done = 0;
+    items = await pool(entries, 4, async (e) => {
+      const r = await resolve(e);
+      setProgress(++done, entries.length, `Spotifyで照合中 ${done}/${entries.length}`);
+      return r;
+    });
+    renderItems();
+    setProgress(1, 1, "読み込み完了。03で入れ方を選んで作成してください。");
+    saveForm();
+  } catch (e) {
+    setProgress(0, 1, ""); $("runStatus").innerHTML = ""; const s = document.createElement("span"); s.className = "err"; s.textContent = e.message; $("runStatus").appendChild(s);
+    $("s-run").scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally { busy(false); }
+}
+
+// ---------- building ----------
+async function buildUris() {
+  const mode = $("mode").value;
+  const n = Math.max(1, +$("topN").value || 3);
+  const useN = +$("useItems").value || Infinity;
+  const src = items.filter((x) => !x.miss).slice(0, useN);
+  let uris = [];
+
+  if (mode === "all") {
+    for (const it of src) uris.push(...it.tracks.map((t) => t.uri));
+  }
+
+  if (mode === "albumTop") {
+    const work = src.flatMap((it) => it.tracks.map((t) => ({ it, t })));
+    let done = 0;
+    await pool(work, 5, async ({ t }) => { t.pc = await playcount(t.artist, t.name); setProgress(++done, work.length, `人気度を確認中 ${done}/${work.length}`); });
+    for (const it of src) {
+      if (it.kind === "track") { uris.push(it.tracks[0].uri); continue; }
+      const top = new Set([...it.tracks].sort((a, b) => b.pc - a.pc).slice(0, n));
+      uris.push(...it.tracks.filter((t) => top.has(t)).map((t) => t.uri)); // 収録順で並べる
+    }
+  }
+
+  if (mode === "artistTop") {
+    const artists = [...new Set(src.map((x) => x.artist).filter(Boolean))];
+    let done = 0;
+    const per = await pool(artists, 3, async (artist) => {
+      const j = await lfm({ method: "artist.getTopTracks", artist, limit: String(Math.max(n * 3, 10)) });
+      const names = (j.toptracks?.track || []).map((t) => t.name);
+      const got = [];
+      for (const name of names) {
+        if (got.length >= n) break;
+        const hit = await searchBest("track", artist, name).catch(() => null);
+        if (hit && !got.includes(hit.uri)) got.push(hit.uri);
+      }
+      if (!got.length) log(`人気曲が見つかりません: ${artist}`);
+      setProgress(++done, artists.length, `アーティストの人気曲を検索中 ${done}/${artists.length}`);
+      return got;
+    });
+    uris = per.flat();
+  }
+
+  uris = [...new Set(uris)];
+  const cap = Math.min(+$("maxTracks").value || 10000, 10000);
+  return uris.slice(0, cap);
+}
+
+async function onRun() {
+  if (!items.some((x) => !x.miss)) { $("runStatus").textContent = "先に02でリストを読み込んでください。"; return; }
+  if ($("mode").value !== "all" && !LASTFM_KEY) { $("runStatus").textContent = "人気順モードには config.js の Last.fm APIキーが必要です。"; return; }
+  busy(true); $("result").hidden = true; logEl.textContent = "";
+  try {
+    const uris = await buildUris();
+    if (!uris.length) throw new Error("追加する曲がありません");
+    setProgress(0, 1, "プレイリストを作成中…");
+    const pl = await sp("me/playlists", { method: "POST", body: JSON.stringify({
+      name: $("plName").value.trim() || "URL Mixtape",
+      public: $("plPublic").value === "true",
+      description: ($("url").value.trim() && !$("paneUrl").hidden ? "From " + $("url").value.trim() : "Made with URL Mixtape").slice(0, 300),
+    }) });
+    for (let i = 0; i < uris.length; i += 100) {
+      await sp(`playlists/${pl.id}/items`, { method: "POST", body: JSON.stringify({ uris: uris.slice(i, i + 100) }) });
+      setProgress(Math.min(i + 100, uris.length), uris.length, `曲を追加中 ${Math.min(i + 100, uris.length)}/${uris.length}`);
+    }
+    const link = pl.external_urls?.spotify || "https://open.spotify.com/playlist/" + pl.id;
+    $("result").innerHTML = ""; const a = document.createElement("a"); a.href = link; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Spotifyで開く →";
+    $("result").append(`${uris.length}曲のプレイリストを作成しました。 `, a); $("result").hidden = false;
+    setProgress(1, 1, "完了");
+  } catch (e) {
+    const s = document.createElement("span"); s.className = "err";
+    s.textContent = e.status === 403 ? "Spotifyに書き込みを拒否されました(403)。アプリの利用登録とPremiumを確認してください。" : e.message;
+    $("runStatus").textContent = ""; $("runStatus").appendChild(s);
+  } finally { busy(false); }
+}
+
+// ---------- form persistence ----------
+const FORM_IDS = ["url", "lines", "lineKind", "mode", "topN", "useItems", "maxTracks", "plName", "plPublic"];
+function saveForm() { const f = {}; FORM_IDS.forEach((id) => (f[id] = $(id).value)); f.tab = $("paneUrl").hidden ? "text" : "url"; store.set("form", f); }
+function loadForm() { const f = store.get("form"); if (!f) return; FORM_IDS.forEach((id) => { if (f[id] != null) $(id).value = f[id]; }); setTab(f.tab || "url"); }
+function setTab(t) {
+  $("paneUrl").hidden = t !== "url"; $("paneText").hidden = t !== "text";
+  $("paneText").style.display = t === "text" ? "grid" : "";
+  $("tabUrl").setAttribute("aria-selected", t === "url"); $("tabText").setAttribute("aria-selected", t === "text");
+}
+function updateModeUI() {
+  const m = $("mode").value;
+  $("topN").disabled = m === "all";
+  $("modeHint").classList.toggle("warn", m !== "all" && !LASTFM_KEY);
+  $("modeHint").textContent = m !== "all" && !LASTFM_KEY
+    ? "人気順モードを使うには、config.js に Last.fm のAPIキーを設定してください。"
+    : "人気順はLast.fmの再生回数で判定します。「アーティストごと」はそのアーティストの全作品から選びます。";
+}
+
+// ---------- wire up ----------
+$("loginBtn").onclick = login;
+$("logoutBtn").onclick = () => { store.del("tok"); location.reload(); };
+$("tabUrl").onclick = () => { setTab("url"); saveForm(); };
+$("tabText").onclick = () => { setTab("text"); saveForm(); };
+$("loadBtn").onclick = onLoad;
+$("runBtn").onclick = onRun;
+$("mode").onchange = () => { updateModeUI(); saveForm(); };
+FORM_IDS.forEach((id) => $(id).addEventListener("change", saveForm));
+
+loadForm(); updateModeUI();
+handleRedirect().then(refreshLoginUI);
+})();
+</script>
+</body>
+</html>
