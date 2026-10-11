@@ -237,13 +237,16 @@ async function accessToken() {
   if (Date.now() > t.exp) t = await tokenRequest({ grant_type: "refresh_token", refresh_token: t.refresh });
   return t.access;
 }
+let pauseUntil = 0;
 async function sp(path, opts = {}, tries = 0) {
+  if (Date.now() < pauseUntil) await sleep(pauseUntil - Date.now());
   const url = path.startsWith("https://") ? path : "https://api.spotify.com/v1/" + path;
   const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + (await accessToken()), "Content-Type": "application/json", ...(opts.headers || {}) } });
-  if (r.status === 429 && tries < 6) {
-    const w = +(r.headers.get("Retry-After") || 2);
+  if (r.status === 429 && tries < 12) {
+    const w = Math.max(+(r.headers.get("Retry-After") || 0), 3 * (tries + 1));
+    pauseUntil = Math.max(pauseUntil, Date.now() + (w + 1) * 1000);
     $("runStatus").textContent = `Spotifyの利用制限にかかったため、${w}秒待ってから続けます…`;
-    await sleep((w + 1) * 1000); return sp(path, opts, tries + 1);
+    await sleep(Math.max(0, pauseUntil - Date.now())); return sp(path, opts, tries + 1);
   }
   if (r.status === 401 && tries < 1) { const t = store.get("tok"); if (t) { t.exp = 0; store.set("tok", t); } return sp(path, opts, tries + 1); }
   if (!r.ok) {
@@ -313,6 +316,10 @@ async function ytInfo(ytid) {
 }
 function parseYtTitle(raw, channel) {
   const fullAlbum = /full\s*album|フルアルバム/i.test(raw);
+  const jp = raw.match(/^\s*(.+?)\s*[「『](.+?)[」』]/);
+  if (jp && jp[1].replace(/[\s\-–—|:/]+$/, "").trim()) {
+    return { kind: fullAlbum ? "album" : "track", artist: jp[1].replace(/[\s\-–—|:/]+$/, "").trim(), title: jp[2].trim() };
+  }
   let t = raw
     .replace(/[(\[【「『][^)\]】」』]*[)\]】」』]/g, " ")
     .replace(/\b(official\s+(music\s+)?video|official\s+audio|official\s+lyric\s+video|lyric\s+video|lyrics|music\s+video|full\s*album|visualizer|MV|M\/V|HD|4K)\b/gi, " ")
@@ -454,7 +461,7 @@ async function onLoad() {
       if (!entries.length) throw new Error("テキストを入力してください");
     }
     let done = 0;
-    items = await pool(entries, 4, async (e) => {
+    items = await pool(entries, entries[0]?.kind === "yt" || !entries[0]?.id ? 2 : 4, async (e) => {
       const r = await resolve(e);
       setProgress(++done, entries.length, `Spotifyで照合中 ${done}/${entries.length}`);
       return r;
