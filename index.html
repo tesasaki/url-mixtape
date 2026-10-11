@@ -77,6 +77,7 @@ code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px
     <button id="loginBtn">Spotifyでログイン</button>
     <button id="logoutBtn" class="ghost" hidden>ログアウト</button>
   </div>
+  <p class="hint">Spotifyのアプリ設定に登録するRedirect URI:<code id="redir"></code></p>
 </section>
 
 <section id="s-src">
@@ -143,7 +144,7 @@ code{font-family:var(--mono);font-size:12px;background:var(--bg);padding:1px 5px
 const CFG = window.MIXTAPE_CONFIG || {};
 const CLIENT_ID = (CFG.spotifyClientId || "").trim();
 const LASTFM_KEY = (CFG.lastfmApiKey || "").trim();
-const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, "");
+const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, "").replace(/\/?$/, "/");
 const SCOPES = "playlist-modify-private playlist-modify-public";
 const $ = (id) => document.getElementById(id);
 
@@ -515,6 +516,7 @@ $("runBtn").onclick = onRun;
 $("mode").onchange = () => { updateModeUI(); saveForm(); };
 FORM_IDS.forEach((id) => $(id).addEventListener("change", saveForm));
 
+$("redir").textContent = REDIRECT_URI;
 loadForm(); updateModeUI();
 handleRedirect().then(refreshLoginUI);
 })();
